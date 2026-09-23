@@ -1,0 +1,26 @@
+This directory stores generated known-answer test vectors for the submission.
+
+Run:
+- `make test_vectors`
+- `make test_vectors256`
+- `make test_vectors512`
+- `make test_vectors_opt`
+- `make test_vectors_opt256`
+- `make test_vectors_opt512`
+
+Expected output:
+- `KAT_SIG_Sigurd128_REF.txt`
+- `KAT_SIG_Sigurd256_REF.txt`
+- `KAT_SIG_Sigurd512_REF.txt`
+- `KAT_SIG_Sigurd128_OPT.txt`
+- `KAT_SIG_Sigurd256_OPT.txt`
+- `KAT_SIG_Sigurd512_OPT.txt`
+
+Notes:
+- The final `Test_Vectors/` layout is flat; generated files should not be placed in subdirectories.
+- The 128-bit reference implementation writes `KAT_SIG_Sigurd128_REF.txt`.
+- The 256-bit reference implementation writes `KAT_SIG_Sigurd256_REF.txt`.
+- The 512-bit reference implementation writes `KAT_SIG_Sigurd512_REF.txt`.
+- The 128-bit optimized implementation writes `KAT_SIG_Sigurd128_OPT.txt`.
+- The 256-bit optimized implementation writes `KAT_SIG_Sigurd256_OPT.txt`.
+- The 512-bit optimized implementation writes `KAT_SIG_Sigurd512_OPT.txt`.
