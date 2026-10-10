@@ -351,12 +351,27 @@ int sig_deserialize_signature(const unsigned char *sn, unsigned long long sn_len
 {
     size_t offset = 0;
     size_t i;
+    unsigned long long fixed_bytes;
 
     if (sn == NULL || commitment_open_hash_count == NULL)
     {
         return -2;
     }
-    if (sn_len_bytes < (2ULL * RAW_POLY_BYTES) + (unsigned long long)(total_groups * HASH_DIGEST_LENGTH) + 4ULL)
+    /*
+     * Reject any input shorter than the smallest well-formed signature before
+     * reading a single field.  Every fixed-size field below is parsed
+     * unconditionally and only the variable-length commitment_open_hashes block
+     * is length checked again further down, so parsing those fixed fields out of
+     * a shorter buffer would read past the caller's allocation.
+     */
+    fixed_bytes =
+        (unsigned long long)(total_groups * HASH_DIGEST_LENGTH) +
+        (unsigned long long)(2 * RAW_POLY_BYTES) +
+        (unsigned long long)(2 * SIGMA_REPETITIONS * RAW_POLY_BYTES) +
+        (unsigned long long)(6 * RAW_POLY_BYTES) +
+        ((unsigned long long)N_PRIME_LEN * RAW_POLY_BYTES) +
+        4ULL;
+    if (sn_len_bytes < fixed_bytes + ((unsigned long long)opennum * RAW_POLY_BYTES))
     {
         return -3;
     }

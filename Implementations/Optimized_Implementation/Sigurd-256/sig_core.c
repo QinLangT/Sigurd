@@ -1839,17 +1839,50 @@ static void hash_to_rand_commitment(RawGF2EX *z_commit, const unsigned char hash
     free(stream);
 }
 
+/* Reserved 16-bit words for the nonzero-gamma rejection loop; eight tries
+ * exhaust with probability 2^-128. */
+#define GAMMA_SAMPLE_TRIES 8u
+
+/*
+ * Sample the interactive-check challenges (r_s, gamma_s) from the Fiat-Shamir
+ * stream.
+ *
+ * gamma_s masks the reserved interactive tail slot in the published response,
+ * p_poly_s = p1 + p0 + gamma_s * e'_slot, so gamma_s = 0 would publish the
+ * unmasked response and leak a public-challenge linear combination of the
+ * embedded syndrome.  Rejecting zero keeps every gamma_s nonzero, for which
+ * gamma_s * e'_slot stays uniform and masks p1 completely.  Only gamma_s needs
+ * this filter: the r_s entries are used additively, where a zero merely drops
+ * one term.  Signer and verifier consume the same words in the same order.
+ */
 static void hash_to_rand_InterCheck(uint16_t rand_challenges[SIGMA_REPETITIONS][ROWS], uint16_t gamma_vec[SIGMA_REPETITIONS], const unsigned char hash_value[HASH_DIGEST_LENGTH])
 {
-    unsigned long long word_count = (unsigned long long)SIGMA_REPETITIONS * (unsigned long long)(ROWS + 1);
+    unsigned long long word_count = (unsigned long long)SIGMA_REPETITIONS * (unsigned long long)(ROWS + GAMMA_SAMPLE_TRIES);
     unsigned char *stream = derive_xof_bytes(SIG_XOF_LABEL_INTERCHECK, hash_value, HASH_DIGEST_LENGTH, word_count * 16ULL);
     size_t word_index = 0;
+    unsigned int attempt;
     int i;
 
     for (i = 0; i < SIGMA_REPETITIONS; ++i)
     {
+        uint16_t gamma = 0u;
         int j;
-        gamma_vec[i] = load_u16_be(stream + (word_index++ * 2u));
+
+        for (attempt = 0; attempt < GAMMA_SAMPLE_TRIES; ++attempt)
+        {
+            gamma = load_u16_be(stream + (word_index++ * 2u));
+            if (gamma != 0u)
+            {
+                break;
+            }
+        }
+        if (gamma == 0u)
+        {
+            free(stream);
+            sig_abort("ERROR: hash_to_rand_InterCheck failed to sample a nonzero gamma");
+        }
+        gamma_vec[i] = gamma;
+
         for (j = 0; j < ROWS; ++j)
         {
             rand_challenges[i][j] = load_u16_be(stream + (word_index++ * 2u));
@@ -1858,11 +1891,25 @@ static void hash_to_rand_InterCheck(uint16_t rand_challenges[SIGMA_REPETITIONS][
     free(stream);
 }
 
+/* Reserved 16-bit words for the nonzero-zeta rejection loop; eight tries exhaust
+ * with probability 2^-128. */
+#define ZETA_SAMPLE_TRIES 8u
+
+/*
+ * Sample the quotient challenge pair (tau, zeta) from the Fiat-Shamir stream.
+ *
+ * zeta scales the masking polynomial of the final response, G_j = E_j + zeta*F_j,
+ * so zeta = 0 would publish the unmasked response polynomial E and expose the
+ * signing witness.  Rejecting the zero word keeps zeta uniform over
+ * F_(2^16) \ {0}, for which F -> zeta*F is still a bijection and hides E
+ * completely.  Both the signer and the verifier walk the same word sequence.
+ */
 static void hash_to_rand_PolyRes(RawGF2EX tau_vec_raw[COLS], uint16_t *zeta_raw, const unsigned char hash_value[HASH_DIGEST_LENGTH])
 {
-    unsigned long long word_count = ((unsigned long long)COLS * (unsigned long long)RAW_POLY_LEN) + 1ULL;
+    unsigned long long word_count = ((unsigned long long)COLS * (unsigned long long)RAW_POLY_LEN) + ZETA_SAMPLE_TRIES;
     unsigned char *stream = derive_xof_bytes(SIG_XOF_LABEL_POLYRES, hash_value, HASH_DIGEST_LENGTH, word_count * 16ULL);
     size_t word_index = 0;
+    unsigned int attempt;
     int i;
 
     for (i = 0; i < COLS; ++i)
@@ -1873,8 +1920,19 @@ static void hash_to_rand_PolyRes(RawGF2EX tau_vec_raw[COLS], uint16_t *zeta_raw,
             tau_vec_raw[i].coeffs[j] = load_u16_be(stream + (word_index++ * 2u));
         }
     }
-    *zeta_raw = load_u16_be(stream + (word_index * 2u));
+    for (attempt = 0; attempt < ZETA_SAMPLE_TRIES; ++attempt)
+    {
+        uint16_t candidate = load_u16_be(stream + (word_index * 2u));
+        if (candidate != 0u)
+        {
+            *zeta_raw = candidate;
+            free(stream);
+            return;
+        }
+        ++word_index;
+    }
     free(stream);
+    sig_abort("ERROR: hash_to_rand_PolyRes failed to sample a nonzero zeta");
 }
 
 static void hash_to_rand_Mask(RawGF2EX *delta_raw, const unsigned char hash_value[HASH_DIGEST_LENGTH])
